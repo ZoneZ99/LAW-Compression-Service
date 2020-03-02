@@ -17,10 +17,17 @@ class CompressFileView(APIView):
         input_file_serializer = InputFileSerializer(data=request.data)
         if input_file_serializer.is_valid():
             input_file = input_file_serializer.save()
+            original_file_data = {
+                "name": input_file.filename,
+                "ext": input_file.filename.split(".")[-1],
+                "size": input_file.raw_file.size
+            }
             file_metadata, file_url = process_uploaded_file(input_file.raw_file)
             try:
                 metadata_service_response = self.call_metadata_service(
-                    file_metadata, file_url
+                    original_file_data,
+                    file_metadata,
+                    file_url
                 )
                 return Response(
                     data=metadata_service_response.json(), status=status.HTTP_200_OK
@@ -35,14 +42,14 @@ class CompressFileView(APIView):
                 data=input_file_serializer.errors, status=status.HTTP_400_BAD_REQUEST
             )
 
-    def call_metadata_service(self, file_metadata, file_url):
+    def call_metadata_service(self, original_file_data, file_metadata, file_url):
         METADATA_SERVICE_URL = os.getenv("METADATA_SERVICE_URL")
         metadata_service_response = requests.post(
             url=f"{METADATA_SERVICE_URL}metadata/",
             data={
-                "name": file_metadata.name,
-                "type": file_metadata.name.split(".")[-1],
-                "size": file_metadata.size,
+                "name": original_file_data["name"],
+                "type": original_file_data["ext"],
+                "size": original_file_data["size"],
                 "location": file_url,
                 "updated": file_metadata.client_modified,
             },
