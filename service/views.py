@@ -1,17 +1,21 @@
 import os
 
 import requests
+from django.utils.decorators import method_decorator
 from dotenv import load_dotenv
 from rest_framework import status
+from rest_framework.authentication import get_authorization_header
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from service.decorators import oauth_check
 from service.serializers import InputFileSerializer
 from service.utils import process_uploaded_file
 
 load_dotenv()
 
 
+@method_decorator(oauth_check, name="dispatch")
 class CompressFileView(APIView):
     def post(self, request, **params):
         input_file_serializer = InputFileSerializer(data=request.data)
@@ -20,14 +24,12 @@ class CompressFileView(APIView):
             original_file_data = {
                 "name": input_file.filename,
                 "ext": input_file.filename.split(".")[-1],
-                "size": input_file.raw_file.size
+                "size": input_file.raw_file.size,
             }
             file_metadata, file_url = process_uploaded_file(input_file.raw_file)
             try:
                 metadata_service_response = self.call_metadata_service(
-                    original_file_data,
-                    file_metadata,
-                    file_url
+                    request, original_file_data, file_metadata, file_url
                 )
                 return Response(
                     data=metadata_service_response.json(), status=status.HTTP_200_OK
@@ -42,7 +44,9 @@ class CompressFileView(APIView):
                 data=input_file_serializer.errors, status=status.HTTP_400_BAD_REQUEST
             )
 
-    def call_metadata_service(self, original_file_data, file_metadata, file_url):
+    def call_metadata_service(
+        self, request, original_file_data, file_metadata, file_url
+    ):
         METADATA_SERVICE_URL = os.getenv("METADATA_SERVICE_URL")
         metadata_service_response = requests.post(
             url=f"{METADATA_SERVICE_URL}metadata/",
@@ -52,6 +56,9 @@ class CompressFileView(APIView):
                 "size": original_file_data["size"],
                 "location": file_url,
                 "updated": file_metadata.client_modified,
+            },
+            headers={
+                "Authorization": f"Bearer {get_authorization_header(request).split()[1].decode()}"
             },
         )
         return metadata_service_response
